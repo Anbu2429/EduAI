@@ -7,6 +7,7 @@ import lombok.Data;
 @Entity
 @Table(name = "system_users")
 public class User {
+    
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -18,5 +19,5 @@ public class User {
     private String password;
     
     @Column(nullable = false)
-    private String role; // "Teacher" or "Student"
+    private String role; // Will store either "Teacher" or "Student"
 }
