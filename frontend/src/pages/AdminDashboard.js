@@ -41,20 +41,29 @@ function BulkUserUpload() {
     formData.append("file", selectedFile);
     try {
       const response = await axios.post("http://localhost:8080/api/auth/bulk-upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" }
+        headers: { "Content-Type": "multipart/form-data" },
+        withCredentials: true // Ensure admin session is passed
       });
+      
       const logData = response.data.data;
       setLastLog(logData);
+      
+      // Calculate Success vs Failure
+      const successCount = logData.filter(log => log.status === 'Success').length;
+      const failCount = logData.filter(log => log.status.includes('Failed')).length;
+
       if (logData && logData.length > 0) {
         const ws = XLSX.utils.json_to_sheet(logData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Credentials Log");
         XLSX.writeFile(wb, "EduAI_Generated_Credentials.xlsx");
       }
-      alert(`${response.data.message}\n\nThe credentials file has been auto-downloaded!`);
+      
+      // Detailed Alert Box
+      alert(`Bulk Upload Complete!\n\nSuccessfully Saved to Database: ${successCount}\nFailed to Save: ${failCount}\n\nThe credentials file has been auto-downloaded. Check the 'status' column in the Excel file for details.`);
       setSelectedFile(null);
     } catch (err) {
-      alert(err.response?.data?.error || "Error uploading file.");
+      alert(err.response?.data?.error || "Error uploading file. Check console.");
     }
   };
 
@@ -73,7 +82,7 @@ function BulkUserUpload() {
       </Box>
       <CardContent sx={{ p: 5 }}>
         <Typography color="text.secondary" textAlign="center" sx={{ mb: 4, fontSize: '1.1rem' }}>
-          Upload your Excel registry. Our system will auto-generate secure credentials for any blank passwords and instantly download the delivery log.
+          Upload your Excel registry. Our system will auto-generate secure credentials for any blank passwords, store them in the database, and instantly download the delivery log.
         </Typography>
         <Stack spacing={4}>
           <Box component="label" sx={{ 
@@ -115,7 +124,7 @@ function UserDatabaseManager({ role }) {
 
   const fetchUsers = async () => {
     try {
-      const res = await axios.get(`http://localhost:8080/api/auth/users/${role}`);
+      const res = await axios.get(`http://localhost:8080/api/auth/users/${role}`, { withCredentials: true });
       setUsers(res.data);
     } catch (err) { console.error("Failed to fetch users", err); }
   };
@@ -128,7 +137,7 @@ function UserDatabaseManager({ role }) {
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://localhost:8080/api/auth/create-user', newAcc);
+      const response = await axios.post('http://localhost:8080/api/auth/create-user', newAcc, { withCredentials: true });
       setMsg({ type: 'success', text: response.data.message });
       setNewAcc({ username: '', password: '', role: role });
       fetchUsers(); 
@@ -140,20 +149,21 @@ function UserDatabaseManager({ role }) {
   const handleDelete = async (id) => {
     if(window.confirm(`Permanently delete this ${role}?`)) {
       try {
-        await axios.delete(`http://localhost:8080/api/auth/users/${id}`);
+        await axios.delete(`http://localhost:8080/api/auth/users/${id}`, { withCredentials: true });
         fetchUsers(); 
       } catch (err) { alert("Failed to delete user."); }
     }
   };
 
   const openEditModal = (user) => {
-    setEditUser({ id: user.id, username: user.username, password: '' }); 
+    // Passes the existing password so it is visible in the modal
+    setEditUser({ id: user.id, username: user.username, password: user.password || '' }); 
     setEditOpen(true);
   };
 
   const handleEditSave = async () => {
     try {
-      await axios.put(`http://localhost:8080/api/auth/users/${editUser.id}`, editUser);
+      await axios.put(`http://localhost:8080/api/auth/users/${editUser.id}`, editUser, { withCredentials: true });
       setEditOpen(false);
       fetchUsers(); 
     } catch (err) { alert("Failed to update user."); }
@@ -193,6 +203,7 @@ function UserDatabaseManager({ role }) {
             <TableRow>
               <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>Account ID</TableCell>
               <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>Username</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>Password</TableCell>
               <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>Status</TableCell>
               <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>Manage</TableCell>
             </TableRow>
@@ -208,6 +219,9 @@ function UserDatabaseManager({ role }) {
                     </Avatar>
                     <Typography fontWeight="bold" fontSize="1.1rem">{user.username}</Typography>
                   </Box>
+                </TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '1.1rem', color: '#d32f2f', fontWeight: 'bold' }}>
+                  {user.password}
                 </TableCell>
                 <TableCell><Chip label="Active" color="success" sx={{ fontWeight: 'bold' }} /></TableCell>
                 <TableCell align="right">
@@ -226,12 +240,13 @@ function UserDatabaseManager({ role }) {
 
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} PaperProps={{ sx: { borderRadius: 4, padding: 2, minWidth: '400px' } }}>
         <DialogTitle sx={{ fontWeight: '900', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <EditIcon /> Edit Profile
+          <EditIcon /> Edit Credentials
         </DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Username" sx={{ mt: 2, mb: 3 }} variant="outlined"
             value={editUser.username} onChange={(e) => setEditUser({...editUser, username: e.target.value})} />
-          <TextField fullWidth label="New Password (Optional)" type="password" variant="outlined" helperText="Leave blank to keep existing password."
+          {/* Changed to text type so you can read the password while editing */}
+          <TextField fullWidth label="Password" type="text" variant="outlined" 
             value={editUser.password} onChange={(e) => setEditUser({...editUser, password: e.target.value})} />
         </DialogContent>
         <DialogActions sx={{ pb: 2, px: 3 }}>
@@ -250,30 +265,23 @@ function AdminDashboard() {
   const [chartData, setChartData] = useState([]);
 
   useEffect(() => {
-    // Fetch dashboard placement stats
-    axios.get('http://localhost:8080/api/dashboard/admin').then(res => setStats(res.data)).catch(err => console.error(err));
+    axios.get('http://localhost:8080/api/dashboard/admin', { withCredentials: true }).then(res => setStats(res.data)).catch(err => console.error(err));
     
-    // Fetch Teacher and Student counts for the Chart
     Promise.all([
-      axios.get('http://localhost:8080/api/auth/users/Teacher'),
-      axios.get('http://localhost:8080/api/auth/users/Student')
+      axios.get('http://localhost:8080/api/auth/users/Teacher', { withCredentials: true }),
+      axios.get('http://localhost:8080/api/auth/users/Student', { withCredentials: true })
     ]).then(([teacherRes, studentRes]) => {
       setChartData([
-        { name: 'Teachers', count: teacherRes.data.length, color: '#9c27b0' }, // Purple
-        { name: 'Students', count: studentRes.data.length, color: '#1976d2' }  // Blue
+        { name: 'Teachers', count: teacherRes.data.length, color: '#9c27b0' }, 
+        { name: 'Students', count: studentRes.data.length, color: '#1976d2' }  
       ]);
     }).catch(err => console.error(err));
-  }, []);
+  }, [tabIndex]); 
 
   return (
     <Box sx={{ bgcolor: '#f4f7fa', minHeight: '100vh', pt: 4, pb: 10 }}>
-      {/* 
-        CHANGED: Removed the <Container> wrapper entirely. 
-        Replaced with a full-width <Box> and minimal padding so it stretches edge-to-edge! 
-      */}
       <Box sx={{ width: '100%', px: { xs: 2, sm: 3, md: 4 }, boxSizing: 'border-box' }}>
         
-        {/* 🌟 PREMIUM HERO BANNER 🌟 */}
         <Box sx={{ 
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
           mb: 5, p: 4, borderRadius: 4, 
@@ -297,7 +305,6 @@ function AdminDashboard() {
           </Box>
         </Box>
 
-        {/* Navigation Tabs wrapped in a floating card */}
         <Paper elevation={3} sx={{ borderRadius: 4, mb: 5, p: 1 }}>
           <Tabs 
             value={tabIndex} 
@@ -313,10 +320,8 @@ function AdminDashboard() {
           </Tabs>
         </Paper>
 
-        {/* Tab 0: Overview & CHARTS */}
         {tabIndex === 0 && (
           <Grid container spacing={4}>
-            {/* Top Stat Cards */}
             <Grid item xs={12} md={6}>
               <Card elevation={6} sx={{ borderRadius: 4, background: 'linear-gradient(135deg, #1976d2 0%, #0d47a1 100%)', color: 'white', height: '100%' }}>
                 <CardContent sx={{ p: 5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -340,7 +345,6 @@ function AdminDashboard() {
               </Card>
             </Grid>
 
-            {/* 🌟 BEAUTIFUL CHARTS SECTION 🌟 */}
             <Grid item xs={12} md={6}>
               <Card elevation={5} sx={{ borderRadius: 4, p: 3, height: 450 }}>
                 <Typography variant="h5" fontWeight="bold" color="text.secondary" gutterBottom align="center">
@@ -383,7 +387,6 @@ function AdminDashboard() {
           </Grid>
         )}
 
-        {/* Other Tabs */}
         {tabIndex === 1 && <UserDatabaseManager role="Teacher" />}
         {tabIndex === 2 && <UserDatabaseManager role="Student" />}
         {tabIndex === 3 && (

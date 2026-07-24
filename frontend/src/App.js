@@ -1,43 +1,91 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useState } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 
-import LoginPage from './pages/LoginPage';
-import AdminDashboard from './pages/AdminDashboard';
-import TeacherDashboard from './pages/TeacherDashboard';
-import StudentDashboard from './pages/StudentDashboard';
-import Layout from './components/Layout'; // Import your new Layout
-import ProfilePage from './pages/ProfilePage';
-import AttendanceMonitor from './pages/AttendanceMonitor';
+import LoginPage from "./pages/LoginPage";
+
+import AdminDashboard from "./pages/AdminDashboard";
+import TeacherDashboard from "./pages/TeacherDashboard";
+import StudentDashboard from "./pages/StudentDashboard";
+
+// import AdminProfile from "./pages/AdminProfile";
+// import TeacherProfile from "./pages/TeacherProfile";
+import StudentProfile from "./pages/StudentProfile";
+
+import AttendanceMonitor from "./pages/AttendanceMonitor";
+
+import Layout from "./components/Layout";
 
 function App() {
-  // null means not logged in. Holds { username, role } if logged in.
   const [currentUser, setCurrentUser] = useState(null);
 
   const handleLogout = () => {
     setCurrentUser(null);
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    localStorage.removeItem("userId");
   };
 
   return (
     <Router>
-      {/* Wrap everything in Layout. Layout handles showing/hiding the Navbar automatically based on currentUser */}
       <Layout user={currentUser} onLogout={handleLogout}>
-        
         {!currentUser ? (
-          // If not logged in, show Login
           <LoginPage onLoginSuccess={setCurrentUser} />
         ) : (
-          // If logged in, show Dashboard routes
           <Routes>
-            {currentUser.role === 'Admin' && <Route path="/*" element={<AdminDashboard />} />}
-            {currentUser.role === 'Teacher' && <Route path="/*" element={<TeacherDashboard />} />}
-            {currentUser.role === 'Student' && <Route path="/*" element={<StudentDashboard username={currentUser.username} />} />}
-            {currentUser.role && <Route path="/profile" element={<ProfilePage user={currentUser} />} />}
-            {currentUser.role === 'Teacher' && <Route path="/teacher/attendance" element={<AttendanceMonitor />} />}
-            {/* Catch-all fallback */}
-            <Route path="*" element={<Navigate to="/" />} />
+
+            {/* ================= ADMIN ================= */}
+            {currentUser.role === "Admin" && (
+              <>
+                <Route path="/" element={<AdminDashboard />} />
+                {/* <Route
+                  path="/profile"
+                  element={<AdminProfile user={currentUser} />}
+                /> */}
+              </>
+            )}
+
+            {/* ================= TEACHER ================= */}
+            {currentUser.role === "Teacher" && (
+              <>
+                <Route path="/" element={<TeacherDashboard />} />
+
+                {/* <Route
+                  path="/profile"
+                  element={<TeacherProfile user={currentUser} />}
+                /> */}
+
+                <Route
+                  path="/teacher/attendance"
+                  element={<AttendanceMonitor />}
+                />
+              </>
+            )}  
+
+            {/* ================= STUDENT ================= */}
+            {currentUser.role === "Student" && (
+              <>
+                <Route
+                  path="/"
+                  element={<StudentDashboard user={currentUser} />}
+                />
+
+                <Route
+                  path="/profile"
+                  element={<StudentProfile user={currentUser} />}
+                />
+              </>
+            )}
+
+            {/* ================= INVALID ROUTE ================= */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+
           </Routes>
         )}
-        
       </Layout>
     </Router>
   );

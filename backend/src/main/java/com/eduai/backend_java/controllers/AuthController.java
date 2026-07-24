@@ -2,15 +2,14 @@ package com.eduai.backend_java.controllers;
 
 import com.eduai.backend_java.models.User;
 import com.eduai.backend_java.repositories.UserRepository;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.util.ArrayList;
@@ -24,123 +23,271 @@ public class AuthController {
     @Autowired
     private UserRepository userRepository;
 
-    // --- 1. LOGIN ENDPOINT ---
+    // ================================
+    // LOGIN (RESTORED ORIGINAL LOGIC + SESSIONS)
+    // ================================
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Map<String, String> credentials) {
+    public ResponseEntity<?> login(@RequestBody Map<String,String> credentials, HttpServletRequest request) {
         String username = credentials.get("username");
         String password = credentials.get("password");
         String role = credentials.get("role");
 
+        // 💡 RESTORED: ADMIN LOGIN BYPASS
         if ("admin".equals(username) && "admin@1".equals(password) && "Admin".equals(role)) {
-            return ResponseEntity.ok(Map.of("status", "success", "username", username, "role", role));
+            // Create Session
+            HttpSession session = request.getSession(true);
+            session.setAttribute("userId", 0L);
+            session.setAttribute("role", role);
+
+            // Return full data for React state
+            return ResponseEntity.ok(
+                Map.of(
+                    "status", "success",
+                    "id", 0,
+                    "username", username,
+                    "role", role
+                )
+            );
         }
 
         User user = userRepository.findByUsernameAndPasswordAndRole(username, password, role);
+
         if (user != null) {
-            return ResponseEntity.ok(Map.of("status", "success", "username", username, "role", role));
+            // Create Session for database user
+            HttpSession session = request.getSession(true);
+            session.setAttribute("userId", user.getId());
+            session.setAttribute("role", user.getRole());
+
+            // 💡 RESTORED: Return full data for React state
+            return ResponseEntity.ok(
+                Map.of(
+                    "status", "success",
+                    "id", user.getId(),
+                    "username", user.getUsername(),
+                    "role", user.getRole()
+                )
+            );
         }
 
-        return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials or wrong role selected."));
+        return ResponseEntity
+                .status(401)
+                .body(Map.of("error", "Invalid credentials"));
     }
 
-    // --- 2. CREATE SINGLE USER ---
+    // ================================
+    // GET CURRENT USER (READS SESSION)
+    // ================================
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        
+        if (session == null || session.getAttribute("userId") == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "No active session. Please log in."));
+        }
+
+        Long userId = (Long) session.getAttribute("userId");
+        
+        // Handle Admin "me" check
+        if (userId == 0L) {
+             return ResponseEntity.ok(Map.of(
+                "id", 0,
+                "username", "admin",
+                "role", "Admin"
+            ));
+        }
+
+        User user = userRepository.findById(userId).orElse(null);
+
+        if (user == null) {
+            return ResponseEntity.status(404).body(Map.of("error", "User not found"));
+        }
+
+        return ResponseEntity.ok(Map.of(
+            "id", user.getId(),
+            "username", user.getUsername(),
+            "role", user.getRole()
+        ));
+    }
+
+    // ================================
+    // CHANGE PASSWORD (FOR LOGGED-IN USERS)
+    // ================================
+    @PutMapping("/change-password")
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        // 1. Check if user is logged in
+        HttpSession session = request.getSession(false);
+        if (session == null || session.getAttribute("userId") == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Please log in first."));
+        }
+
+        Long userId = (Long) session.getAttribute("userId");
+        String newPassword = body.get("newPassword");
+
+        if (newPassword == null || newPassword.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Password cannot be empty."));
+        }
+
+        // 2. Find the user in the database
+        User user = userRepository.findById(userId).orElse(null);
+        
+        if (user == null) {
+            return ResponseEntity.status(404).body(Map.of("error", "User not found."));
+        }
+
+        // 3. Update password and save
+        user.setPassword(newPassword.trim());
+        userRepository.save(user);
+
+        return ResponseEntity.ok(Map.of(
+            "status", "success", 
+            "message", "Password updated successfully!"
+        ));
+    }
+
+    // ================================
+    // LOGOUT (DESTROYS SESSION)
+    // ================================
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate(); 
+        }
+        return ResponseEntity.ok(Map.of("status", "success", "message", "Logged out"));
+    }
+
+    // ================================
+    // CREATE USER
+    // ================================
     @PostMapping("/create-user")
     public ResponseEntity<?> createUser(@RequestBody User newUser) {
         try {
             userRepository.save(newUser);
-            return ResponseEntity.ok(Map.of("status", "success", "message", "Account for " + newUser.getUsername() + " created successfully!"));
+            return ResponseEntity.ok(Map.of("status", "success", "message", "Account created"));
         } catch (Exception e) {
-            return ResponseEntity.status(400).body(Map.of("error", "Username already exists."));
+            return ResponseEntity.badRequest().body(Map.of("error", "Username already exists"));
         }
     }
 
-    // --- 3. GET USERS BY ROLE ---
+    // ================================
+    // GET USERS BY ROLE
+    // ================================
     @GetMapping("/users/{role}")
     public ResponseEntity<List<User>> getUsersByRole(@PathVariable String role) {
         return ResponseEntity.ok(userRepository.findByRole(role));
     }
 
-    // --- 4. DELETE USER ---
+    // ================================
+    // DELETE USER
+    // ================================
     @DeleteMapping("/users/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Long id) {
         userRepository.deleteById(id);
-        return ResponseEntity.ok(Map.of("status", "success", "message", "User deleted successfully."));
+        return ResponseEntity.ok(Map.of("status", "success", "message", "Deleted successfully"));
     }
 
-    // --- 5. UPDATE USER ---
+    // ================================
+    // UPDATE USER
+    // ================================
     @PutMapping("/users/{id}")
     public ResponseEntity<?> updateUser(@PathVariable Long id, @RequestBody User updatedUser) {
-        return userRepository.findById(id).map(user -> {
-            user.setUsername(updatedUser.getUsername());
-            if (updatedUser.getPassword() != null && !updatedUser.getPassword().isEmpty()) {
-                user.setPassword(updatedUser.getPassword());
-            }
-            userRepository.save(user);
-            return ResponseEntity.ok(Map.of("status", "success", "message", "User updated successfully."));
-        }).orElse(ResponseEntity.status(404).body(Map.of("error", "User not found.")));
+        return userRepository.findById(id)
+                .map(user -> {
+                    user.setUsername(updatedUser.getUsername());
+                    if (updatedUser.getPassword() != null && !updatedUser.getPassword().isEmpty()) {
+                        user.setPassword(updatedUser.getPassword());
+                    }
+                    userRepository.save(user);
+                    return ResponseEntity.ok(Map.of("status", "success"));
+                })
+                .orElse(ResponseEntity.status(404).body((Map) Map.of("error", "User not found")));
     }
 
-    // --- 6. BULK UPLOAD & AUTO-CREDENTIAL LOGIC ---
+    // ================================
+    // SMART BULK UPLOAD (FIXES GHOST USERS & DUPLICATES)
+    // ================================
     @PostMapping("/bulk-upload")
     public ResponseEntity<?> bulkUploadUsers(@RequestParam("file") MultipartFile file) {
-        List<Map<String, String>> credentialsLog = new ArrayList<>();
+        List<Map<String,String>> logs = new ArrayList<>();
         int count = 0;
 
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
             Sheet sheet = workbook.getSheetAt(0);
             DataFormatter formatter = new DataFormatter();
+            
+            // 💡 Fetch all existing users so we can update broken ones instead of crashing
+            List<User> existingUsers = userRepository.findAll();
 
             for (Row row : sheet) {
-                if (row.getRowNum() == 0) continue; // Skip the header row (Row 0)
+                if (row.getRowNum() == 0) continue; // Skip header row
 
-                String role = formatter.formatCellValue(row.getCell(0)).trim();
-                String username = formatter.formatCellValue(row.getCell(1)).trim();
-                String password = formatter.formatCellValue(row.getCell(2)).trim();
+                // Read columns safely
+                String col0 = formatter.formatCellValue(row.getCell(0)).trim(); // Expected: Role
+                String col1 = formatter.formatCellValue(row.getCell(1)).trim(); // Expected: Username
+                String col2 = formatter.formatCellValue(row.getCell(2)).trim(); // Expected: Password
 
-                // Skip completely empty rows
-                if (username.isEmpty() || role.isEmpty()) continue;
+                String role = "Student"; // 💡 Default fallback if they forget the role
+                String username = "";
+                String password = col2;
 
-                // AUTO-CREDENTIAL LOGIC: If password is empty, generate a random one
-                if (password.isEmpty()) {
-                    int randomPin = (int) ((Math.random() * 9000) + 1000); // Generates 1000 - 9999
-                    password = "EduAI@" + randomPin;
+                // Handle cases where the user accidentally puts Usernames in Column A
+                if (col1.isEmpty() && !col0.isEmpty()) {
+                    username = col0; 
+                } else if (!col1.isEmpty()) {
+                    username = col1;
+                    if (!col0.isEmpty()) role = col0;
                 }
 
+                if (username.isEmpty()) continue;
+
+                // Auto-generate password if left blank in Excel
+                if (password.isEmpty()) {
+                    password = "EduAI@" + ((int) (Math.random() * 9000) + 1000);
+                }
+
+                // Force exact casing for Roles so React can read them
+                if (role.equalsIgnoreCase("teacher")) role = "Teacher";
+                else if (role.equalsIgnoreCase("admin")) role = "Admin";
+                else role = "Student";
+
                 try {
-                    User newUser = new User();
-                    newUser.setRole(role);
-                    newUser.setUsername(username);
-                    newUser.setPassword(password);
-                    userRepository.save(newUser);
+                    final String searchUsername = username;
+                    
+                    // 💡 THE FIX: Check if user exists. If yes, update them. If no, create new.
+                    User userToSave = existingUsers.stream()
+                            .filter(u -> u.getUsername().equalsIgnoreCase(searchUsername))
+                            .findFirst()
+                            .orElse(new User());
+
+                    userToSave.setRole(role);
+                    userToSave.setUsername(username);
+                    userToSave.setPassword(password);
+
+                    userRepository.save(userToSave); 
                     count++;
 
-                    // Add to our log of successful creations
-                    credentialsLog.add(Map.of(
-                            "Role", role,
-                            "Username", username,
-                            "Password", password,
-                            "Status", "Success"
+                    logs.add(Map.of(
+                        "username", username, 
+                        "password", password, 
+                        "status", "Success"
                     ));
                 } catch (Exception e) {
-                    // If username already exists, log the failure
-                    credentialsLog.add(Map.of(
-                            "Role", role,
-                            "Username", username,
-                            "Password", "N/A",
-                            "Status", "Failed - Username Already Exists"
+                    System.out.println("❌ FAILED TO SAVE USER: " + username);
+                    logs.add(Map.of(
+                        "username", username, 
+                        "status", "Failed - Database Error"
                     ));
                 }
             }
-            
-            // Return the count and the full log of generated credentials back to React
-            return ResponseEntity.ok(Map.of(
-                    "status", "success", 
-                    "message", count + " accounts successfully processed!",
-                    "data", credentialsLog
-            ));
-            
+
+            return ResponseEntity.ok(
+                Map.of("status", "success", "count", count, "data", logs)
+            );
+
         } catch (Exception e) {
-            return ResponseEntity.status(400).body(Map.of("error", "Error processing file. Make sure it is a valid .xlsx file."));
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("error", "Invalid Excel file format. Please use the template."));
         }
     }
 }

@@ -8,6 +8,9 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 
+// 💡 CRITICAL: Ensure Axios accepts and sends Session Cookies for authentication
+axios.defaults.withCredentials = true;
+
 function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -24,6 +27,8 @@ function LoginPage({ onLoginSuccess }) {
       });
       
       if (response.data.status === 'success') {
+        // The backend automatically sets the HTTP-Only Session Cookie here.
+        // No need for localStorage!
         onLoginSuccess(response.data);
       }
     } catch (err) {
