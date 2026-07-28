@@ -55,6 +55,17 @@ public class StudentProfile {
     @Column(length = 500)
     private String address;
 
+    // --- Parent, Tutor, and HOD Details for Attendance Alerts ---
+    private String parentName;
+    private String parentEmail;
+
+    private String tutorName;
+    private String tutorEmail;
+
+    private String hodName;
+    private String hodEmail;
+    // -----------------------------------------------------------
+
     // Profile Information
     private String profilePhoto;
 

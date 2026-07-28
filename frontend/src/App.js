@@ -7,16 +7,12 @@ import {
 } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage";
-
 import AdminDashboard from "./pages/AdminDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 
-// import AdminProfile from "./pages/AdminProfile";
-// import TeacherProfile from "./pages/TeacherProfile";
 import StudentProfile from "./pages/StudentProfile";
-
-import AttendanceMonitor from "./pages/AttendanceMonitor";
+import TeacherAttendance from "./components/TeacherAttendance";
 
 import Layout from "./components/Layout";
 
@@ -42,10 +38,6 @@ function App() {
             {currentUser.role === "Admin" && (
               <>
                 <Route path="/" element={<AdminDashboard />} />
-                {/* <Route
-                  path="/profile"
-                  element={<AdminProfile user={currentUser} />}
-                /> */}
               </>
             )}
 
@@ -54,14 +46,10 @@ function App() {
               <>
                 <Route path="/" element={<TeacherDashboard />} />
 
-                {/* <Route
-                  path="/profile"
-                  element={<TeacherProfile user={currentUser} />}
-                /> */}
-
-                <Route
-                  path="/teacher/attendance"
-                  element={<AttendanceMonitor />}
+                {/* 💡 FIXED: Only pointing to the database-connected TeacherAttendance component */}
+                <Route 
+                  path="/teacher/attendance" 
+                  element={<TeacherAttendance />} 
                 />
               </>
             )}  
@@ -73,7 +61,6 @@ function App() {
                   path="/"
                   element={<StudentDashboard user={currentUser} />}
                 />
-
                 <Route
                   path="/profile"
                   element={<StudentProfile user={currentUser} />}
