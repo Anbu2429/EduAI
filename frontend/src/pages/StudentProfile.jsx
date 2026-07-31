@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 
 import {
@@ -28,7 +28,9 @@ import {
   Save,
   School,
   CameraAlt,
-  Close
+  Close,
+  FamilyRestroom,
+  SupervisorAccount
 } from "@mui/icons-material";
 
 const API = "http://localhost:8080/api";
@@ -48,6 +50,10 @@ function StudentProfile() {
     severity: "success"
   });
 
+  const message = useCallback((msg, type) => {
+    setSnackbar({ open: true, message: msg, severity: type });
+  }, []);
+
   // ===============================
   // CAMERA STATE & REFS
   // ===============================
@@ -55,24 +61,7 @@ function StudentProfile() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  useEffect(() => {
-    getUserSession();
-    // Cleanup camera on unmount if left open
-    return () => stopCamera();
-  }, []);
-
-  const getUserSession = async () => {
-    try {
-      const res = await axios.get(`${API}/auth/me`);
-      setUserId(res.data.id);
-      getProfile(res.data.id);
-    } catch (error) {
-      console.log(error);
-      setLoading(false);
-    }
-  };
-
-  const getProfile = async (id) => {
+  const getProfile = useCallback(async (id) => {
     try {
       const res = await axios.get(`${API}/student/profile/user/${id}`);
       setProfile(res.data);
@@ -95,6 +84,12 @@ function StudentProfile() {
         semester: "",
         section: "",
         cgpa: "",
+        parentName: "",
+        parentEmail: "",
+        tutorName: "",
+        tutorEmail: "",
+        hodName: "",
+        hodEmail: "",
         skills: "",
         github: "",
         linkedin: "",
@@ -107,7 +102,32 @@ function StudentProfile() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [message]);
+
+  const getUserSession = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/auth/me`);
+      setUserId(res.data.id);
+      getProfile(res.data.id);
+    } catch (error) {
+      console.log(error);
+      setLoading(false);
+    }
+  }, [getProfile]);
+
+  const stopCamera = useCallback(() => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+    }
+    setCameraOpen(false);
+  }, []);
+
+  useEffect(() => {
+    getUserSession();
+    // Cleanup camera on unmount if left open
+    return () => stopCamera();
+  }, [getUserSession, stopCamera]);
 
   const handleChange = (e) => {
     setProfile({ ...profile, [e.target.name]: e.target.value });
@@ -131,6 +151,12 @@ function StudentProfile() {
         semester: profile.semester ? Number(profile.semester) : 1,
         section: profile.section,
         cgpa: profile.cgpa ? Number(profile.cgpa) : 0.0,
+        parentName: profile.parentName,
+        parentEmail: profile.parentEmail,
+        tutorName: profile.tutorName,
+        tutorEmail: profile.tutorEmail,
+        hodName: profile.hodName,
+        hodEmail: profile.hodEmail,
         skills: profile.skills,
         github: profile.github,
         linkedin: profile.linkedin,
@@ -184,24 +210,13 @@ function StudentProfile() {
     }
   };
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
-    }
-    setCameraOpen(false);
-  };
-
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
-      // Set canvas size to video size
       canvasRef.current.width = videoRef.current.videoWidth;
       canvasRef.current.height = videoRef.current.videoHeight;
-      // Draw image to canvas
       context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
       
-      // Convert canvas to a File object
       canvasRef.current.toBlob((blob) => {
         if (blob) {
           const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
@@ -232,7 +247,6 @@ function StudentProfile() {
     }
   };
 
-  const message = (msg, type) => setSnackbar({ open: true, message: msg, severity: type });
   const handleCloseSnackbar = () => setSnackbar((prev) => ({ ...prev, open: false }));
 
   if (loading) return <Box height="80vh" display="flex" justifyContent="center" alignItems="center"><CircularProgress /></Box>;
@@ -291,8 +305,9 @@ function StudentProfile() {
                   <TextField fullWidth multiline rows={2} label="Address" name="address" value={profile.address || ""} onChange={handleChange} />
                 </Grid>
 
+                {/* Academic Details Section */}
                 <Divider sx={{ width: "100%", my: 3 }} />
-                <Typography variant="h5" fontWeight="bold" sx={{ width: '100%', ml: 3 }}>Academic</Typography>
+                <Typography variant="h5" fontWeight="bold" sx={{ width: '100%' }}>Academic Information</Typography>
 
                 <Grid item xs={12} md={6}>
                   <TextField fullWidth label="Department *" name="department" value={profile.department || ""} onChange={handleChange} />
@@ -303,9 +318,49 @@ function StudentProfile() {
                 <Grid item xs={12} md={3}>
                   <TextField fullWidth label="Semester *" name="semester" type="number" value={profile.semester || ""} onChange={handleChange} />
                 </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField fullWidth label="Section" name="section" value={profile.section || ""} onChange={handleChange} />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField fullWidth label="CGPA" name="cgpa" type="number" inputProps={{ step: "0.01" }} value={profile.cgpa || ""} onChange={handleChange} />
+                </Grid>
 
-                <Grid item xs={12}>
-                  <Button variant="contained" startIcon={<Save />} disabled={saving} onClick={saveProfile} sx={{ mt: 2 }}>
+                {/* Parent Information Section */}
+                <Divider sx={{ width: "100%", my: 3 }} />
+                <Typography variant="h5" fontWeight="bold" sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <FamilyRestroom color="primary" /> Parent / Guardian Information
+                </Typography>
+
+                <Grid item xs={12} md={6}>
+                  <TextField fullWidth label="Parent Name" name="parentName" value={profile.parentName || ""} onChange={handleChange} />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField fullWidth label="Parent Email (For Absence Alerts)" name="parentEmail" type="email" value={profile.parentEmail || ""} onChange={handleChange} />
+                </Grid>
+
+                {/* Staff / Mentor Information Section */}
+                <Divider sx={{ width: "100%", my: 3 }} />
+                <Typography variant="h5" fontWeight="bold" sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <SupervisorAccount color="primary" /> Staff / Mentor Information
+                </Typography>
+
+                <Grid item xs={12} md={6}>
+                  <TextField fullWidth label="Tutor Name" name="tutorName" value={profile.tutorName || ""} onChange={handleChange} />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField fullWidth label="Tutor Email" name="tutorEmail" type="email" value={profile.tutorEmail || ""} onChange={handleChange} />
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField fullWidth label="HOD Name" name="hodName" value={profile.hodName || ""} onChange={handleChange} />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField fullWidth label="HOD Email" name="hodEmail" type="email" value={profile.hodEmail || ""} onChange={handleChange} />
+                </Grid>
+
+                {/* Save Button */}
+                <Grid item xs={12} sx={{ mt: 2 }}>
+                  <Button variant="contained" size="large" startIcon={<Save />} disabled={saving} onClick={saveProfile} sx={{ px: 4, py: 1.5, fontWeight: 'bold' }}>
                     {saving ? "Saving..." : (profile.id ? "Update Profile" : "Create Profile")}
                   </Button>
                 </Grid>

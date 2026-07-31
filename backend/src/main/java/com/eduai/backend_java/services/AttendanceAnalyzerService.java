@@ -86,7 +86,8 @@ public class AttendanceAnalyzerService {
             return;
         }
 
-        StudentProfile student = studentProfileRepository.findById(studentId).orElse(null);
+        // FIX: Changed findById to findByUserId
+        StudentProfile student = studentProfileRepository.findByUserId(studentId).orElse(null);
 
         if (student == null) {
             return;

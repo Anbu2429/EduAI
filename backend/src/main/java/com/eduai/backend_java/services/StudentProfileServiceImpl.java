@@ -55,7 +55,8 @@ public class StudentProfileServiceImpl implements StudentProfileService {
         StudentProfile existing = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Student Profile not found with ID : " + id));
 
-        // Personal Details
+        // Personal Details & Register Number
+        existing.setRegisterNumber(studentProfile.getRegisterNumber());
         existing.setFirstName(studentProfile.getFirstName());
         existing.setLastName(studentProfile.getLastName());
         existing.setEmail(studentProfile.getEmail());
@@ -70,6 +71,15 @@ public class StudentProfileServiceImpl implements StudentProfileService {
         existing.setSemester(studentProfile.getSemester());
         existing.setSection(studentProfile.getSection());
         existing.setCgpa(studentProfile.getCgpa());
+
+        // --- Parent, Tutor, and HOD Details (ADDED) ---
+        existing.setParentName(studentProfile.getParentName());
+        existing.setParentEmail(studentProfile.getParentEmail());
+        existing.setTutorName(studentProfile.getTutorName());
+        existing.setTutorEmail(studentProfile.getTutorEmail());
+        existing.setHodName(studentProfile.getHodName());
+        existing.setHodEmail(studentProfile.getHodEmail());
+        // ----------------------------------------------
 
         // Professional Details
         existing.setSkills(studentProfile.getSkills());

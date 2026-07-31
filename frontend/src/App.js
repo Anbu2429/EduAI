@@ -12,6 +12,7 @@ import TeacherDashboard from "./pages/TeacherDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 
 import StudentProfile from "./pages/StudentProfile";
+import StudentTests from "./components/StudentTests"; // 💡 Added: Student Assessments & Coding Workspace
 import TeacherAttendance from "./components/TeacherAttendance";
 
 import Layout from "./components/Layout";
@@ -46,7 +47,6 @@ function App() {
               <>
                 <Route path="/" element={<TeacherDashboard />} />
 
-                {/* 💡 FIXED: Only pointing to the database-connected TeacherAttendance component */}
                 <Route 
                   path="/teacher/attendance" 
                   element={<TeacherAttendance />} 
@@ -64,6 +64,11 @@ function App() {
                 <Route
                   path="/profile"
                   element={<StudentProfile user={currentUser} />}
+                />
+                {/* 💡 Added: Student Assessments and Multi-Language Coding Workspace Route */}
+                <Route
+                  path="/student/tests"
+                  element={<StudentTests />}
                 />
               </>
             )}

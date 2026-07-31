@@ -72,10 +72,11 @@ public class AttendanceService {
         return attendanceRepository.findByDateAndSession(date, session);
     }
 
-    // Helper method to verify student profile emails and send immediate absence alerts
+    // Helper method to verify student profile emails and send immediate absence alerts (Excluding Student)
     private void sendImmediateAbsentAlert(Attendance attendance) {
-        StudentProfile student = studentProfileRepository.findById(attendance.getStudentId()).orElse(null);
+        StudentProfile student = studentProfileRepository.findByUserId(attendance.getStudentId()).orElse(null);
         if (student == null) {
+            System.out.println("Student Profile not found for User ID: " + attendance.getStudentId());
             return;
         }
 
@@ -98,21 +99,7 @@ public class AttendanceService {
                 "Regards,\n" +
                 "EduAI Attendance System";
 
-        // 1. Notify Student
-        if (student.getEmail() != null && !student.getEmail().isEmpty()) {
-            emailService.sendEmail(student.getEmail(), subject, message);
-
-            Notification studentNotification = new Notification();
-            studentNotification.setStudentId(student.getRegisterNumber());
-            studentNotification.setStudentName(fullName);
-            studentNotification.setRecipient("Student");
-            studentNotification.setRecipientEmail(student.getEmail());
-            studentNotification.setMessage(message);
-            studentNotification.setStatus("SENT");
-            notificationService.saveNotification(studentNotification);
-        }
-
-        // 2. Notify Parent
+        // 1. Notify Parent
         if (student.getParentEmail() != null && !student.getParentEmail().isEmpty()) {
             emailService.sendEmail(student.getParentEmail(), subject, message);
 
@@ -126,7 +113,7 @@ public class AttendanceService {
             notificationService.saveNotification(parentNotification);
         }
 
-        // 3. Notify Tutor
+        // 2. Notify Tutor
         if (student.getTutorEmail() != null && !student.getTutorEmail().isEmpty()) {
             emailService.sendEmail(student.getTutorEmail(), subject, message);
 
@@ -140,7 +127,7 @@ public class AttendanceService {
             notificationService.saveNotification(tutorNotification);
         }
 
-        // 4. Notify HOD
+        // 3. Notify HOD
         if (student.getHodEmail() != null && !student.getHodEmail().isEmpty()) {
             emailService.sendEmail(student.getHodEmail(), subject, message);
 

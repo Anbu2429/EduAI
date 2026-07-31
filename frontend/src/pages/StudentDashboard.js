@@ -32,12 +32,14 @@ import {
   SmartToy,
 } from "@mui/icons-material";
 
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
 // 💡 CRITICAL: Ensure Session Cookies are sent
 axios.defaults.withCredentials = true;
 
 function StudentDashboard() {
+  const navigate = useNavigate();
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
@@ -80,13 +82,11 @@ function StudentDashboard() {
   const getDynamicSkills = () => {
     if (!profile?.skills) return [["Java", 90], ["React", 75], ["SQL", 82]]; // Fallback
     
-    // Split by comma, trim spaces, and assign a visual score based on order
     const skillArray = profile.skills.split(",").map(s => s.trim()).filter(s => s);
     return skillArray.map((skill, index) => {
-      // Create a visual score (just for dashboard UI purposes)
       const visualScore = Math.max(60, 95 - (index * 8)); 
       return [skill, visualScore];
-    }).slice(0, 5); // Show max 5 skills
+    }).slice(0, 5); 
   };
 
   const dynamicSkills = getDynamicSkills();
@@ -101,10 +101,9 @@ function StudentDashboard() {
       const response = await axios.post(
         "http://localhost:8080/api/placement/analyze",
         {
-          // 💡 Use actual DB data for the AI Analysis
           studentId: profile?.registerNumber || "UNKNOWN",
           name: profile?.firstName || displayName,
-          attendance: 92, // Update if you add this to DB later
+          attendance: 92,
           assessmentScore: displayCgpa,
         }
       );
@@ -188,17 +187,20 @@ function StudentDashboard() {
             >
               CONTINUE LEARNING
             </Button>
+            {/* 🔗 REDIRECT TO ASSESSMENTS */}
             <Button
               variant="outlined"
+              onClick={() => navigate("/student/tests")}
               sx={{
                 color: "white",
                 borderColor: "white",
                 px: 4,
                 py: 1.5,
                 borderRadius: 2,
+                "&:hover": { borderColor: "#fff", bgcolor: "rgba(255,255,255,0.1)" }
               }}
             >
-              VIEW QUIZ
+              VIEW ASSESSMENTS
             </Button>
           </Stack>
         </Box>
@@ -244,7 +246,7 @@ function StudentDashboard() {
           </CardContent>
         </Card>
 
-        {/* Academic Performance (Using DB CGPA) */}
+        {/* Academic Performance */}
         <Card sx={{ borderRadius: 4 }}>
           <CardContent sx={{ p: 3 }}>
             <Stack direction="row" spacing={3} alignItems="center">
@@ -258,7 +260,7 @@ function StudentDashboard() {
                 </Typography>
                 <LinearProgress
                   variant="determinate"
-                  value={displayCgpa * 10} // Convert 10.0 scale to 100% scale
+                  value={displayCgpa * 10}
                   color="success"
                   sx={{ mt: 2, height: 6, borderRadius: 4 }}
                 />
@@ -289,7 +291,7 @@ function StudentDashboard() {
                   <Button
                     variant="contained"
                     onClick={checkReadiness}
-                    disabled={loading || !profile} // Disable if profile isn't filled out
+                    disabled={loading || !profile}
                     sx={{
                       mt: 4, borderRadius: 2, px: 4, py: 1.3, fontWeight: "bold", bgcolor: "#2458ff",
                     }}
@@ -364,30 +366,29 @@ function StudentDashboard() {
       {/* ---------------- BOTTOM SECTION ---------------- */}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr 1fr" }, gap: 3 }}>
         
-        {/* Quizzes */}
-        <Card sx={{ borderRadius: 4, height: "100%" }}>
+        {/* Quizzes & Assessments Card */}
+        <Card sx={{ borderRadius: 4, height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <CardContent>
             <Stack direction="row" spacing={2} alignItems="center" mb={3}>
               <Avatar sx={{ bgcolor: "#efe7ff", color: "#7c4dff" }}><Assignment /></Avatar>
-              <Typography variant="h6" fontWeight="700">Quizzes</Typography>
+              <Typography variant="h6" fontWeight="700">Quizzes & Tests</Typography>
             </Stack>
             <List disablePadding>
               <ListItem disableGutters>
-                <ListItemText primary="Java Basics" secondary="15 Questions • Completed" />
-                <Chip label="92%" color="success" variant="outlined" />
-              </ListItem>
-              <Divider sx={{ my: 1 }} />
-              <ListItem disableGutters>
-                <ListItemText primary="React Fundamentals" secondary="20 Questions • Completed" />
-                <Chip label="78%" color="success" variant="outlined" />
-              </ListItem>
-              <Divider sx={{ my: 1 }} />
-              <ListItem disableGutters>
-                <ListItemText primary="SQL Joins" secondary="12 Questions • In Progress" />
-                <Button size="small">Resume</Button>
+                <ListItemText primary="Aptitude & Coding Tests" secondary="Available now" />
               </ListItem>
             </List>
           </CardContent>
+          <Box sx={{ p: 2, pt: 0 }}>
+            <Button 
+              fullWidth 
+              variant="contained" 
+              onClick={() => navigate("/student/tests")}
+              sx={{ borderRadius: 2, fontWeight: 'bold', bgcolor: '#7c4dff', '&:hover': { bgcolor: '#651fff' } }}
+            >
+              Open Assessments
+            </Button>
+          </Box>
         </Card>
 
         {/* Upcoming Tasks */}
