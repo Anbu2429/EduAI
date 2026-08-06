@@ -15,6 +15,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -24,7 +25,7 @@ public class AuthController {
     private UserRepository userRepository;
 
     // ================================
-    // LOGIN (RESTORED ORIGINAL LOGIC + SESSIONS)
+    // LOGIN (Returns Department Routing Data)
     // ================================
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String,String> credentials, HttpServletRequest request) {
@@ -32,50 +33,41 @@ public class AuthController {
         String password = credentials.get("password");
         String role = credentials.get("role");
 
-        // 💡 RESTORED: ADMIN LOGIN BYPASS
         if ("admin".equals(username) && "admin@1".equals(password) && "Admin".equals(role)) {
-            // Create Session
             HttpSession session = request.getSession(true);
             session.setAttribute("userId", 0L);
             session.setAttribute("role", role);
 
-            // Return full data for React state
             return ResponseEntity.ok(
-                Map.of(
-                    "status", "success",
-                    "id", 0,
-                    "username", username,
-                    "role", role
-                )
+                Map.of("status", "success", "id", 0, "username", username, "role", role)
             );
         }
 
         User user = userRepository.findByUsernameAndPasswordAndRole(username, password, role);
 
         if (user != null) {
-            // Create Session for database user
             HttpSession session = request.getSession(true);
             session.setAttribute("userId", user.getId());
             session.setAttribute("role", user.getRole());
 
-            // 💡 RESTORED: Return full data for React state
-            return ResponseEntity.ok(
-                Map.of(
-                    "status", "success",
-                    "id", user.getId(),
-                    "username", user.getUsername(),
-                    "role", user.getRole()
-                )
-            );
+            // Send full routing details to frontend
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("id", user.getId());
+            response.put("username", user.getUsername());
+            response.put("role", user.getRole());
+            response.put("department", user.getDepartment() != null ? user.getDepartment() : "");
+            response.put("year", user.getYear() != null ? user.getYear() : "");
+            response.put("classSection", user.getClassSection() != null ? user.getClassSection() : "");
+
+            return ResponseEntity.ok(response);
         }
 
-        return ResponseEntity
-                .status(401)
-                .body(Map.of("error", "Invalid credentials"));
+        return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
     }
 
     // ================================
-    // GET CURRENT USER (READS SESSION)
+    // GET CURRENT USER (Returns Department Routing Data)
     // ================================
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(HttpServletRequest request) {
@@ -87,13 +79,8 @@ public class AuthController {
 
         Long userId = (Long) session.getAttribute("userId");
         
-        // Handle Admin "me" check
         if (userId == 0L) {
-             return ResponseEntity.ok(Map.of(
-                "id", 0,
-                "username", "admin",
-                "role", "Admin"
-            ));
+             return ResponseEntity.ok(Map.of("id", 0, "username", "admin", "role", "Admin"));
         }
 
         User user = userRepository.findById(userId).orElse(null);
@@ -102,19 +89,67 @@ public class AuthController {
             return ResponseEntity.status(404).body(Map.of("error", "User not found"));
         }
 
-        return ResponseEntity.ok(Map.of(
-            "id", user.getId(),
-            "username", user.getUsername(),
-            "role", user.getRole()
-        ));
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", user.getId());
+        response.put("username", user.getUsername());
+        response.put("role", user.getRole());
+        response.put("department", user.getDepartment() != null ? user.getDepartment() : "");
+        response.put("year", user.getYear() != null ? user.getYear() : "");
+        response.put("classSection", user.getClassSection() != null ? user.getClassSection() : "");
+
+        return ResponseEntity.ok(response);
     }
 
     // ================================
-    // CHANGE PASSWORD (FOR LOGGED-IN USERS)
+    // SMART CLASS ROSTER FOR TEACHER ATTENDANCE
+    // ================================
+    @GetMapping("/class-roster")
+    public ResponseEntity<?> getClassRoster(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session == null || session.getAttribute("userId") == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not logged in"));
+        }
+
+        Long userId = (Long) session.getAttribute("userId");
+        User teacher = userRepository.findById(userId).orElse(null);
+
+        if (teacher == null || !"Teacher".equals(teacher.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Only teachers can access class rosters"));
+        }
+
+        // Get all students and filter them based on the Teacher's assigned department
+        List<User> allStudents = userRepository.findByRole("Student");
+        List<User> myStudents = new ArrayList<>();
+
+        for (User student : allStudents) {
+            // Check if department matches (or if teacher is assigned to "All")
+            boolean matchDept = teacher.getDepartment() == null || teacher.getDepartment().isEmpty() 
+                    || teacher.getDepartment().equalsIgnoreCase("All") 
+                    || teacher.getDepartment().equalsIgnoreCase(student.getDepartment());
+
+            // Check if year matches (or if teacher is assigned to "All Years")
+            boolean matchYear = teacher.getYear() == null || teacher.getYear().isEmpty() 
+                    || teacher.getYear().equalsIgnoreCase("All") || teacher.getYear().equalsIgnoreCase("All Years") 
+                    || teacher.getYear().equalsIgnoreCase(student.getYear());
+
+            // Check if section matches (or if teacher is assigned to "All")
+            boolean matchClass = teacher.getClassSection() == null || teacher.getClassSection().isEmpty() 
+                    || teacher.getClassSection().equalsIgnoreCase("All") 
+                    || teacher.getClassSection().equalsIgnoreCase(student.getClassSection());
+
+            if (matchDept && matchYear && matchClass) {
+                myStudents.add(student);
+            }
+        }
+
+        return ResponseEntity.ok(myStudents);
+    }
+
+    // ================================
+    // CHANGE PASSWORD
     // ================================
     @PutMapping("/change-password")
     public ResponseEntity<?> changePassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
-        // 1. Check if user is logged in
         HttpSession session = request.getSession(false);
         if (session == null || session.getAttribute("userId") == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Please log in first."));
@@ -127,25 +162,19 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Password cannot be empty."));
         }
 
-        // 2. Find the user in the database
         User user = userRepository.findById(userId).orElse(null);
-        
         if (user == null) {
             return ResponseEntity.status(404).body(Map.of("error", "User not found."));
         }
 
-        // 3. Update password and save
         user.setPassword(newPassword.trim());
         userRepository.save(user);
 
-        return ResponseEntity.ok(Map.of(
-            "status", "success", 
-            "message", "Password updated successfully!"
-        ));
+        return ResponseEntity.ok(Map.of("status", "success", "message", "Password updated successfully!"));
     }
 
     // ================================
-    // LOGOUT (DESTROYS SESSION)
+    // LOGOUT
     // ================================
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request) {
@@ -197,6 +226,10 @@ public class AuthController {
                     if (updatedUser.getPassword() != null && !updatedUser.getPassword().isEmpty()) {
                         user.setPassword(updatedUser.getPassword());
                     }
+                    if (updatedUser.getDepartment() != null) user.setDepartment(updatedUser.getDepartment());
+                    if (updatedUser.getYear() != null) user.setYear(updatedUser.getYear());
+                    if (updatedUser.getClassSection() != null) user.setClassSection(updatedUser.getClassSection());
+                    
                     userRepository.save(user);
                     return ResponseEntity.ok(Map.of("status", "success"));
                 })
@@ -204,7 +237,7 @@ public class AuthController {
     }
 
     // ================================
-    // SMART BULK UPLOAD (FIXES GHOST USERS & DUPLICATES)
+    // SMART BULK UPLOAD (MAPPED TO 5 COLUMNS EXACTLY)
     // ================================
     @PostMapping("/bulk-upload")
     public ResponseEntity<?> bulkUploadUsers(@RequestParam("file") MultipartFile file) {
@@ -215,45 +248,38 @@ public class AuthController {
             Sheet sheet = workbook.getSheetAt(0);
             DataFormatter formatter = new DataFormatter();
             
-            // 💡 Fetch all existing users so we can update broken ones instead of crashing
             List<User> existingUsers = userRepository.findAll();
 
             for (Row row : sheet) {
                 if (row.getRowNum() == 0) continue; // Skip header row
 
-                // Read columns safely
-                String col0 = formatter.formatCellValue(row.getCell(0)).trim(); // Expected: Role
-                String col1 = formatter.formatCellValue(row.getCell(1)).trim(); // Expected: Username
-                String col2 = formatter.formatCellValue(row.getCell(2)).trim(); // Expected: Password
+                // READ EXACTLY 5 COLUMNS BASED ON YOUR EXCEL FILE (No Password column)
+                String role = formatter.formatCellValue(row.getCell(0)).trim();         // A: Role
+                String username = formatter.formatCellValue(row.getCell(1)).trim();     // B: Username
+                String department = formatter.formatCellValue(row.getCell(2)).trim();   // C: Department
+                String year = formatter.formatCellValue(row.getCell(3)).trim();         // D: Year
+                String classSection = formatter.formatCellValue(row.getCell(4)).trim(); // E: ClassSection
 
-                String role = "Student"; // 💡 Default fallback if they forget the role
-                String username = "";
-                String password = col2;
+                // Skip empty rows
+                if (username.isEmpty() && role.isEmpty()) continue;
 
-                // Handle cases where the user accidentally puts Usernames in Column A
-                if (col1.isEmpty() && !col0.isEmpty()) {
-                    username = col0; 
-                } else if (!col1.isEmpty()) {
-                    username = col1;
-                    if (!col0.isEmpty()) role = col0;
+                // ALWAYS AUTO-GENERATE PASSWORD (e.g., student01@skct.edu.in -> student01123)
+                String prefix = username.contains("@") ? username.split("@")[0] : username;
+                String password = prefix + "123";
+
+                // Standardize Roles
+                if (role.equalsIgnoreCase("teacher") || role.equalsIgnoreCase("faculty")) {
+                    role = "Teacher";
+                } else if (role.equalsIgnoreCase("admin")) {
+                    role = "Admin";
+                } else {
+                    role = "Student";
                 }
-
-                if (username.isEmpty()) continue;
-
-                // Auto-generate password if left blank in Excel
-                if (password.isEmpty()) {
-                    password = "EduAI@" + ((int) (Math.random() * 9000) + 1000);
-                }
-
-                // Force exact casing for Roles so React can read them
-                if (role.equalsIgnoreCase("teacher")) role = "Teacher";
-                else if (role.equalsIgnoreCase("admin")) role = "Admin";
-                else role = "Student";
 
                 try {
                     final String searchUsername = username;
                     
-                    // 💡 THE FIX: Check if user exists. If yes, update them. If no, create new.
+                    // Update if exists, otherwise create new
                     User userToSave = existingUsers.stream()
                             .filter(u -> u.getUsername().equalsIgnoreCase(searchUsername))
                             .findFirst()
@@ -262,10 +288,14 @@ public class AuthController {
                     userToSave.setRole(role);
                     userToSave.setUsername(username);
                     userToSave.setPassword(password);
+                    userToSave.setDepartment(department);
+                    userToSave.setYear(year);
+                    userToSave.setClassSection(classSection);
 
                     userRepository.save(userToSave); 
                     count++;
 
+                    // Log output will show the generated password to the Admin
                     logs.add(Map.of(
                         "username", username, 
                         "password", password, 
@@ -287,7 +317,7 @@ public class AuthController {
         } catch (Exception e) {
             return ResponseEntity
                     .badRequest()
-                    .body(Map.of("error", "Invalid Excel file format. Please use the template."));
+                    .body(Map.of("error", "Invalid Excel file format. Please ensure it has 5 columns (Role, Username, Department, Year, ClassSection)."));
         }
     }
 }

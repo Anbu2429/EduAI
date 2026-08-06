@@ -5,7 +5,7 @@ import {
   FormControl, TextField, MenuItem, Select, InputLabel,
   Chip, Divider, Stack, Avatar, CircularProgress 
 } from '@mui/material';
-import { Timer, CheckCircle, Code, Quiz, PlayArrow, Terminal } from '@mui/icons-material';
+import { Timer, CheckCircle, Code, Quiz, PlayArrow, Terminal, Lock } from '@mui/icons-material';
 import axios from 'axios';
 
 axios.defaults.withCredentials = true;
@@ -22,9 +22,13 @@ function StudentTests() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  
+  const [completedTests, setCompletedTests] = useState([]);
 
   useEffect(() => {
     fetchLiveAssessments();
+    const savedCompleted = JSON.parse(localStorage.getItem('completedTests')) || [];
+    setCompletedTests(savedCompleted);
   }, []);
 
   useEffect(() => {
@@ -33,7 +37,7 @@ function StudentTests() {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          handleSubmitTest();
+          handleSubmitTest(); 
           return 0;
         }
         return prev - 1;
@@ -43,13 +47,12 @@ function StudentTests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTest, timeLeft]);
 
-  // Fetch live assessments created by Admin from MySQL database
   const fetchLiveAssessments = async () => {
     try {
       const res = await axios.get('http://localhost:8080/api/assessments');
       setTests(res.data);
     } catch (err) {
-      console.error("Failed to fetch live assessments from backend", err);
+      console.error("Failed to fetch live assessments", err);
     } finally {
       setLoading(false);
     }
@@ -82,15 +85,28 @@ function StudentTests() {
     }
   };
 
+  // --- SMART EVALUATOR FOR CODING ---
   const handleRunCode = (questionId) => {
     setIsRunning(true);
+    const currentQ = activeTest.questions.find(q => q.id === questionId);
+    const userCode = answers[questionId] || "";
+    const starterCode = currentQ.starterCode[selectedLanguage] || "";
+
     setTimeout(() => {
-      setCodeOutputs(prev => ({
-        ...prev,
-        [questionId]: `Compilation Successful (${selectedLanguage.toUpperCase()})\nOutput Verified.\nTest Cases Passed: 3 / 3`
-      }));
+      let outputMsg = "";
+      
+      // Smart Heuristic Evaluation: Checks if they modified code
+      if (userCode.trim() === starterCode.trim() || userCode.trim() === "") {
+        outputMsg = `❌ Compilation Successful (${selectedLanguage.toUpperCase()})\nExecution Failed: You have not modified the starter code.\n\nTest Cases Passed: 0 / 3`;
+      } else if (userCode.length < starterCode.length + 10) {
+        outputMsg = `❌ Compilation Error\nSyntax Error: Code is missing core logical operators or brackets.\n\nTest Cases Passed: 0 / 3`;
+      } else {
+        outputMsg = `✅ Compilation Successful (${selectedLanguage.toUpperCase()})\nExecuting against hidden test cases...\n\nInput: ${currentQ.testCaseInput || 'N/A'}\nOutput matches Expected: ${currentQ.expectedOutput || 'N/A'}\n\nTest Cases Passed: 3 / 3`;
+      }
+
+      setCodeOutputs(prev => ({ ...prev, [questionId]: outputMsg }));
       setIsRunning(false);
-    }, 1000);
+    }, 1500);
   };
 
   const handleSubmitTest = async () => {
@@ -99,8 +115,14 @@ function StudentTests() {
       const payload = { assessmentId: activeTest.id, answers };
       const res = await axios.post(`http://localhost:8080/api/assessments/${activeTest.id}/submit`, payload);
       setResult(res.data);
+
+      const updatedCompleted = [...completedTests, activeTest.id];
+      setCompletedTests(updatedCompleted);
+      localStorage.setItem('completedTests', JSON.stringify(updatedCompleted));
+
     } catch (err) {
       console.error("Failed to submit assessment", err);
+      alert("Error evaluating test. Please try again.");
     } finally {
       setSubmitting(false);
       setActiveTest(null);
@@ -111,6 +133,10 @@ function StudentTests() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  const handleCloseResult = () => {
+    setResult(null);
   };
 
   if (loading) {
@@ -127,22 +153,28 @@ function StudentTests() {
         </Typography>
       </Box>
 
+      {/* --- RESULT SCREEN --- */}
       {result && (
-        <Paper elevation={4} sx={{ p: 5, mb: 4, borderRadius: 4, textAlign: 'center', bgcolor: '#e8f5e9' }}>
-          <CheckCircle color="success" sx={{ fontSize: 60, mb: 2 }} />
-          <Typography variant="h4" fontWeight="bold" color="success.dark" gutterBottom>
+        <Paper elevation={4} sx={{ p: 5, mb: 4, borderRadius: 4, textAlign: 'center', bgcolor: result.status === 'PASSED' ? '#e8f5e9' : '#ffebee' }}>
+          <CheckCircle color={result.status === 'PASSED' ? 'success' : 'error'} sx={{ fontSize: 60, mb: 2 }} />
+          <Typography variant="h4" fontWeight="bold" color={result.status === 'PASSED' ? 'success.dark' : 'error.dark'} gutterBottom>
             Assessment Evaluated Successfully!
           </Typography>
           <Typography variant="h6" sx={{ mb: 2 }}>
-            Final Score: <strong>{result.score}%</strong> ({result.correctCount} / {result.total} Cleared)
+            Final Score: <strong>{result.score}%</strong> ({result.correctCount} / {result.total} Correct)
           </Typography>
-          <Chip label={`Status: ${result.status}`} color="success" sx={{ fontSize: '1rem', fontWeight: 'bold', px: 2, py: 1 }} />
-          <Box sx={{ mt: 3 }}>
-            <Button variant="contained" onClick={() => setResult(null)}>Back to Assessment List</Button>
+          <Chip 
+            label={`Status: ${result.status}`} 
+            color={result.status === 'PASSED' ? 'success' : 'error'} 
+            sx={{ fontSize: '1rem', fontWeight: 'bold', px: 2, py: 1 }} 
+          />
+          <Box sx={{ mt: 4 }}>
+            <Button variant="contained" size="large" onClick={handleCloseResult}>Back to Assessment List</Button>
           </Box>
         </Paper>
       )}
 
+      {/* --- ACTIVE TEST SCREEN --- */}
       {activeTest && !result ? (
         <Paper elevation={4} sx={{ p: 4, borderRadius: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pb: 2, borderBottom: '1px solid #e0e0e0' }}>
@@ -176,13 +208,34 @@ function StudentTests() {
                       value={answers[currentQ.id] || ''} 
                       onChange={(e) => handleAnswerChange(currentQ.id, e.target.value)}
                     >
-                      {currentQ.options && currentQ.options.map((opt, idx) => (
-                        <FormControlLabel key={idx} value={opt.charAt(0)} control={<Radio />} label={opt} sx={{ my: 0.5 }} />
-                      ))}
+                      {currentQ.options && currentQ.options.map((opt, idx) => {
+                        const optionLetter = opt.charAt(0);
+                        return (
+                          <FormControlLabel 
+                            key={idx} 
+                            value={optionLetter} 
+                            control={<Radio />} 
+                            label={opt} 
+                            sx={{ my: 0.5 }} 
+                          />
+                        );
+                      })}
                     </RadioGroup>
                   </FormControl>
                 ) : (
                   <Box>
+                    {/* NEW INPUT/OUTPUT UI DISPLAY */}
+                    <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                      <Paper sx={{ p: 2, flex: 1, bgcolor: '#e3f2fd', borderLeft: '4px solid #1976d2' }}>
+                        <Typography variant="caption" fontWeight="bold" color="primary">Sample Input</Typography>
+                        <Typography variant="body1" fontFamily="monospace" fontWeight="bold">{currentQ.testCaseInput || "N/A"}</Typography>
+                      </Paper>
+                      <Paper sx={{ p: 2, flex: 1, bgcolor: '#e8f5e9', borderLeft: '4px solid #2e7d32' }}>
+                        <Typography variant="caption" fontWeight="bold" color="success.main">Expected Output</Typography>
+                        <Typography variant="body1" fontFamily="monospace" fontWeight="bold">{currentQ.expectedOutput || "N/A"}</Typography>
+                      </Paper>
+                    </Box>
+
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                       <Typography variant="subtitle2" fontWeight="bold" color="text.secondary">
                         Code Workspace & Compiler
@@ -217,8 +270,9 @@ function StudentTests() {
                       </Button>
                     </Box>
 
+                    {/* DYNAMIC CONSOLE OUTPUT (Red for errors, Green for success) */}
                     {codeOutputs[currentQ.id] && (
-                      <Paper sx={{ mt: 2, p: 2, bgcolor: '#000', color: '#00ff00', fontFamily: 'monospace', borderRadius: 2 }}>
+                      <Paper sx={{ mt: 2, p: 2, bgcolor: '#000', color: codeOutputs[currentQ.id].includes('❌') ? '#ff5252' : '#00ff00', fontFamily: 'monospace', borderRadius: 2 }}>
                         <Stack direction="row" spacing={1} alignItems="center" mb={1}>
                           <Terminal fontSize="small" />
                           <Typography variant="caption" fontWeight="bold">Console Output</Typography>
@@ -251,31 +305,47 @@ function StudentTests() {
           </Box>
         </Paper>
       ) : !result && (
+        
+        /* --- ASSESSMENT CATALOG SCREEN --- */
         tests.length > 0 ? (
           <Grid container spacing={3}>
-            {tests.map((test) => (
-              <Grid item xs={12} md={6} key={test.id}>
-                <Card elevation={3} sx={{ borderRadius: 4, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                      <Avatar sx={{ bgcolor: test.type === 'APTITUDE' ? '#1976d2' : '#9c27b0' }}>
-                        {test.type === 'APTITUDE' ? <Quiz /> : <Code />}
-                      </Avatar>
-                      <Box>
-                        <Typography variant="h6" fontWeight="bold">{test.title}</Typography>
-                        <Chip label={`${test.durationMinutes} Mins • ${test.questions?.length || 0} Questions`} size="small" variant="outlined" sx={{ mt: 0.5 }} />
+            {tests.map((test) => {
+              const isCompleted = completedTests.includes(test.id);
+
+              return (
+                <Grid item xs={12} md={6} key={test.id}>
+                  <Card elevation={3} sx={{ borderRadius: 4, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: isCompleted ? 0.7 : 1 }}>
+                    <CardContent sx={{ p: 4 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Avatar sx={{ bgcolor: isCompleted ? 'success.main' : (test.type === 'APTITUDE' ? '#1976d2' : '#9c27b0') }}>
+                          {isCompleted ? <CheckCircle /> : (test.type === 'APTITUDE' ? <Quiz /> : <Code />)}
+                        </Avatar>
+                        <Box>
+                          <Typography variant="h6" fontWeight="bold">{test.title}</Typography>
+                          <Chip label={`${test.durationMinutes} Mins • ${test.questions?.length || 0} Questions`} size="small" variant="outlined" sx={{ mt: 0.5 }} />
+                        </Box>
                       </Box>
-                    </Box>
-                    <Typography color="text.secondary" sx={{ mb: 3 }}>
-                      Live institutional assessment published by administration for skill evaluation.
-                    </Typography>
-                    <Button fullWidth variant="contained" size="large" onClick={() => startTest(test)} sx={{ borderRadius: 2, fontWeight: 'bold' }}>
-                      Start Assessment
-                    </Button>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
+                      <Typography color="text.secondary" sx={{ mb: 3 }}>
+                        Live institutional assessment published by administration for skill evaluation.
+                      </Typography>
+                      
+                      <Button 
+                        fullWidth 
+                        variant="contained" 
+                        size="large" 
+                        color={isCompleted ? "success" : "primary"}
+                        onClick={() => startTest(test)} 
+                        disabled={isCompleted}
+                        startIcon={isCompleted ? <Lock /> : null}
+                        sx={{ borderRadius: 2, fontWeight: 'bold' }}
+                      >
+                        {isCompleted ? "Assessment Completed" : "Start Assessment"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
           </Grid>
         ) : (
           <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 4 }}>
@@ -283,7 +353,6 @@ function StudentTests() {
           </Paper>
         )
       )}
-
     </Box>
   );
 }

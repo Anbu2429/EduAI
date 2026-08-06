@@ -20,4 +20,7 @@ public class User {
     
     @Column(nullable = false)
     private String role; // Will store either "Teacher" or "Student"
+    private String department;
+    private String year;
+    private String classSection;
 }

@@ -21,7 +21,14 @@ public class Question {
     @Column(name = "question_type")
     private String type;
 
-    // FIX: SUBSELECT safely loads the first list without crashing the database
+    // --- NEW FIELDS FOR CODING TEST CASES ---
+    @Column(columnDefinition = "TEXT")
+    private String testCaseInput;
+
+    @Column(columnDefinition = "TEXT")
+    private String expectedOutput;
+    // ----------------------------------------
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "question_options", joinColumns = @JoinColumn(name = "question_id"))
     @Column(name = "option_text")
@@ -30,7 +37,6 @@ public class Question {
 
     private String answer;
 
-    // FIX: SUBSELECT safely loads the second list without crashing the database
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "question_starter_codes", joinColumns = @JoinColumn(name = "question_id"))
     @MapKeyColumn(name = "language")
@@ -47,6 +53,10 @@ public class Question {
     public void setCategory(String category) { this.category = category; }
     public String getType() { return type; }
     public void setType(String type) { this.type = type; }
+    public String getTestCaseInput() { return testCaseInput; }
+    public void setTestCaseInput(String testCaseInput) { this.testCaseInput = testCaseInput; }
+    public String getExpectedOutput() { return expectedOutput; }
+    public void setExpectedOutput(String expectedOutput) { this.expectedOutput = expectedOutput; }
     public List<String> getOptions() { return options; }
     public void setOptions(List<String> options) { this.options = options; }
     public String getAnswer() { return answer; }
